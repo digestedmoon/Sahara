@@ -4,7 +4,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from app.config import Config
-from app.extensions import db, jwt
+from app.extensions import db, jwt, socketio
 
 
 def create_app():
@@ -22,6 +22,7 @@ def create_app():
     # ✅ Initialize extensions
     db.init_app(app)
     jwt.init_app(app)
+    socketio.init_app(app)
 
     # ✅ Import models so SQLAlchemy knows them
     from app import models  # noqa: F401
@@ -60,5 +61,9 @@ def create_app():
     # ✅ Create DB tables automatically (MVP mode)
     with app.app_context():
         db.create_all()
+
+    # ✅ Start background scheduler
+    from app.services.scheduler import start_scheduler
+    start_scheduler(app)
 
     return app

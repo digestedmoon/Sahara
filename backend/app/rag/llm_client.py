@@ -23,6 +23,8 @@ def _build_context(retrieved: List[RetrievedDoc]) -> str:
 def gemini_answer(question_nepali: str, retrieved: List[RetrievedDoc]) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
+        # you can choose: raise error, or safe fallback
+        # raising is fine (your rag.py catches and falls back)
         raise RuntimeError("GEMINI_API_KEY not set")
 
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")

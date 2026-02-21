@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 
 from app.rag.embeddings import embed_text
 
-TOP_SCORE_THRESHOLD = 0.20
+TOP_SCORE_THRESHOLD = 0.08
 DEFAULT_TOP_K = 3
 
 @dataclass
@@ -44,7 +44,8 @@ def retrieve_top_k(
     doc_type: Optional[str] = None,
     top_k: int = DEFAULT_TOP_K,
 ) -> Tuple[List[RetrievedDoc], float]:
-    q_vec = embed_text(query_text)
+    q_vec = embed_text(query_text, is_query=True)
+
 
     q = db_session.query(KnowledgeDocModel).filter(KnowledgeDocModel.elder_id == elder_id)
     if doc_type:

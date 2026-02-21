@@ -7,9 +7,9 @@
             ]
         }
     ],
-    "venvPath": "backend",
-    "venv": ".venv",
-    "extraPaths": [
+    "venvPath": ".",
+    "venv": "backend/.venv",
+    "include": [
         "backend"
     ]
 }
