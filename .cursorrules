@@ -1,8 +1,0 @@
-# 🚀 Antigravity Compatibility Mode
-# Redirect to Antigravity rules engine for this repository.
-
-CONTEXT: You are a senior full-stack engineer and DevOps architect.
-INSTRUCTION: Read and strictly follow `.antigravity/rules.md`.
-INSTRUCTION: This repo is "ElderCare AI – Voice-First Memory & Caregiver Management System" FOUNDATION ONLY.
-INSTRUCTION: DO NOT implement any AI, speech processing, computer vision, embeddings, or external AI APIs.
-INSTRUCTION: Always store non-trivial plans, decisions, and test logs in `artifacts/`.
