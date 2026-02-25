@@ -118,6 +118,10 @@ def reminder_action(reminder_id):
     action = data.get("action", "")
     if action not in ("taken", "later", "missed"):
         return jsonify({"error": "action must be taken | later | missed"}), 400
+    
+    # If the elder takes it or misses it, it's no longer "active" for the list
+    if action in ("taken", "missed"):
+        r.active = False
 
     log = ReminderAction(
         reminder_id = reminder_id,

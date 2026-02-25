@@ -178,7 +178,7 @@ export default function ElderDashboard() {
 
     const dismissReminder = async (reminderId: number, action: 'taken' | 'later') => {
         await apiClient.post(`/reminders/${reminderId}/action`, { action }).catch(() => { });
-        setReminders((prev) => prev.filter((r) => r.reminder_id !== reminderId));
+        setReminders((prev) => prev.filter((r) => r.id !== reminderId));
     };
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -258,10 +258,10 @@ export default function ElderDashboard() {
                                 {r.body && <p style={{ margin: '0.4rem 0 0.8rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>{r.body}</p>}
 
                                 <div style={{ display: 'flex', gap: '0.75rem' }}>
-                                    <button onClick={() => dismissReminder(r.reminder_id, 'taken')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', background: '#22c55e', color: '#fff', fontSize: '1rem', fontWeight: 700, cursor: 'pointer' }}>
+                                    <button onClick={() => dismissReminder(r.id, 'taken')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', background: '#22c55e', color: '#fff', fontSize: '1rem', fontWeight: 700, cursor: 'pointer' }}>
                                         ✓ लिएँ (Done)
                                     </button>
-                                    <button onClick={() => dismissReminder(r.reminder_id, 'later')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>
+                                    <button onClick={() => dismissReminder(r.id, 'later')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>
                                         पछि (Later)
                                     </button>
                                 </div>
