@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getToken, setToken, clearToken } from '../../utils/storage';
+import { getToken, setToken, clearToken, getUser, setUser } from '../../utils/storage';
 
 export type UserRole = 'elder' | 'caretaker' | 'admin';
 
@@ -20,11 +20,12 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   token: getToken(),
-  user: null,
+  user: getUser(),
   isAuthenticated: !!getToken(),
 
   login: (token: string, user: User) => {
     setToken(token);
+    setUser(user);
     set({ token, user, isAuthenticated: true });
   },
 
