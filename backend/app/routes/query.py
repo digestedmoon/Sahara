@@ -21,8 +21,9 @@ from app.extensions import db, eleven_client
 from app.models import (
     Memory, MemoryPerson, MemoryMedicine, MemoryRoutine,
     MemoryEvent, MemoryObject, MemoryReassurance,
-    InteractionLog, Reminder
+    InteractionLog, Reminder, CaregiverElderMap
 )
+from app.routes.sockets import emit_caregiver_alert
 
 query_bp = Blueprint("query", __name__, url_prefix="/api/query")
 
@@ -237,15 +238,54 @@ def _retrieve_memory(elder_id: int, intent: str, entity: str) -> dict | None:
 NARRATE_SYSTEM = """\
 तपाईं एउटा मेमोरी सहायक हुनुहुन्छ जसले वृद्ध व्यक्तिलाई सहयोग गर्छ।
 नियम:
-- तलको MEMORY DATA मा भएको जानकारी मात्र प्रयोग गर्नुहोस्।
+- तलको CONTEXT BUNDLE मा भएको जानकारी मात्र प्रयोग गर्नुहोस्।
 - अनुमान नगर्नुहोस्। थप्नुहोस् पनि।
+- CONTEXT BUNDLE मा भएको समय, दिनचर्या (routine) र भर्खरैका प्रश्नहरू (recent questions) बुझेर प्राकृतिक तरिकाले जवाफ दिनुहोस् (Natural language in Nepali)।
 - जवाफ छोटो, सरल नेपालीमा दिनुहोस् (२–३ वाक्य मात्र)।
 - "हजुर" वा "हजुरआमा" भनेर सम्बोधन गर्नुहोस्।
 - MEMORY DATA खाली भए: "मलाई जानकारी छैन। के फोन गरिदिउँ?" मात्र भन्नुहोस्।
 """
 
-def _narrate(question: str, memory: dict | None) -> str:
-    """Ask Gemini to convert retrieved memory into spoken Nepali. Never guesses."""
+def _gather_context(elder_id: int) -> dict:
+    """Gathers deterministic context variables for natural narration."""
+    # 1. Current Time (Kathmandu)
+    import pytz
+    ktm_tz = pytz.timezone('Asia/Kathmandu')
+    now = datetime.now(ktm_tz)
+    
+    # 2. Next Routine
+    current_time_str = now.strftime("%H:%M")
+    next_routine = (
+        db.session.query(MemoryRoutine)
+        .join(Memory, Memory.id == MemoryRoutine.memory_id)
+        .filter(Memory.elder_id == elder_id, Memory.type == "routine")
+        .filter(MemoryRoutine.time_of_day > current_time_str)
+        .order_by(MemoryRoutine.time_of_day.asc())
+        .first()
+    )
+    routine_ctxt = None
+    if next_routine:
+        routine_ctxt = f"{next_routine.time_of_day} - {next_routine.description}"
+
+    # 3. Recent 3 Logs
+    recent_logs = (
+        InteractionLog.query
+        .filter_by(elder_id=elder_id)
+        .order_by(InteractionLog.timestamp.desc())
+        .limit(3)
+        .all()
+    )
+    logs_ctxt = [{"intent": l.intent, "query": l.raw_query} for l in recent_logs]
+
+    return {
+        "current_time_kathmandu": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "next_routine": routine_ctxt,
+        "recent_questions": logs_ctxt
+    }
+
+
+def _narrate(elder_id: int, question: str, memory: dict | None) -> str:
+    """Ask Gemini to convert retrieved memory + context into spoken Nepali."""
     if not memory:
         return FALLBACK_NEPALI
 
@@ -262,10 +302,17 @@ def _narrate(question: str, memory: dict | None) -> str:
         client = genai.Client(api_key=api_key)
         model  = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
+        context_data = _gather_context(elder_id)
+        bundle = {
+            "MEMORY_DATA": memory,
+            "CONTEXT": context_data
+        }
+        bundle_json = json.dumps(bundle, ensure_ascii=False, indent=2)
+
         prompt = (
-            f"MEMORY DATA:\n{memory_text}\n\n"
+            f"CONTEXT BUNDLE:\n{bundle_json}\n\n"
             f"प्रश्न: {question}\n\n"
-            "अब MEMORY DATA आधारमा मात्र छोटो उत्तर दिनुहोस्:"
+            "अब CONTEXT BUNDLE आधारमा मात्र छोटो र प्राकृतिक उत्तर दिनुहोस्:"
         )
 
         resp = client.models.generate_content(
@@ -361,28 +408,26 @@ def handle_query():
             "response_type":  "emergency",
         })
 
+    # Alert Caregiver if confusion intent is detected
+    if intent in ["unknown", "confusion"] or (intent == "reassurance_query" and not entity):
+        mappings = CaregiverElderMap.query.filter_by(elder_id=elder_id).all()
+        for m in mappings:
+            emit_caregiver_alert(
+                caregiver_id=m.caregiver_id,
+                alert_type="confusion_alert",
+                message=f"Elder seems confused or asked an unknown question: '{text}'",
+                payload={"elder_id": elder_id, "query": text}
+            )
+
     # ── Step 3: deterministic retrieval ─────────────────────
     memory = _retrieve_memory(elder_id, intent, entity)
 
     # ── Step 4: narrate via Gemini (context-only) ────────────
     response_type = "memory" if memory else "fallback"
-    answer = _narrate(text, memory)
+    answer = _narrate(elder_id, text, memory)
     # ── Step 5: Convert Text to Nepali Audio (ElevenLabs) ────
-    audio_base64 = ""
-    try:
-        # We use the Multilingual v2 model for the best Nepali support
-        audio_generator = eleven_client.text_to_speech.convert(
-            voice_id=NEPALI_VOICE_ID,
-            model_id="eleven_v3", 
-            text=answer,
-            output_format="mp3_44100_128"
-        )
-        
-        # Convert the generator/bytes into base64
-        audio_bytes = b"".join(audio_generator)
-        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-    except Exception as e:
-        print(f"ElevenLabs Error: {e}") 
+    from app.utils.tts import generate_tts_base64
+    audio_base64 = generate_tts_base64(answer)
     
     # ── Step 5: log interaction ──────────────────────────────
     log = InteractionLog(

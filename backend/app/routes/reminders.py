@@ -5,7 +5,8 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 
 from app.extensions import db
-from app.models import Reminder, ReminderAction
+from app.models import Reminder, ReminderAction, CaregiverElderMap
+from app.routes.sockets import emit_caregiver_alert
 
 reminders_bp = Blueprint("reminders", __name__, url_prefix="/api/reminders")
 
@@ -54,7 +55,10 @@ def create_reminder():
     elder_id = data.get("elder_id")
     title    = (data.get("title") or "").strip()
     time_str = (data.get("scheduled_time") or "").strip()
-
+    if ":" in time_str:
+        h, m = time_str.split(":")
+        time_str = f"{int(h):02d}:{int(m):02d}"
+    
     if not elder_id or not title or not time_str:
         return jsonify({"error": "elder_id, title, scheduled_time are required"}), 400
 
@@ -130,6 +134,18 @@ def reminder_action(reminder_id):
     )
     db.session.add(log)
     db.session.commit()
+
+    # Emit socket alert to associated caregivers if missed
+    if action == "missed":
+        mappings = CaregiverElderMap.query.filter_by(elder_id=r.elder_id).all()
+        for m in mappings:
+            emit_caregiver_alert(
+                caregiver_id=m.caregiver_id,
+                alert_type="reminder_missed",
+                message=f"छुट्यो! (Missed!) The reminder '{r.title}' was missed.",
+                payload={"reminder_id": r.id, "title": r.title, "elder_id": r.elder_id}
+            )
+
     return jsonify({"ok": True, "action": action})
 
 

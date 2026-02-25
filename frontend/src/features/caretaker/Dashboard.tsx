@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 import { getDashboard, type DashboardData } from '../../api/caregiver';
+import { useAuthStore } from '../auth/authStore';
 
 const STAT_ICONS: Record<string, string> = {
   elder_count: '👴',
@@ -33,14 +35,48 @@ const INTENT_COLOR: Record<string, string> = {
 
 export default function CaretakerDashboard() {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState<any[]>([]);
 
   useEffect(() => {
     getDashboard()
       .then(setData)
       .finally(() => setLoading(false));
-  }, []);
+
+    // Socket.io connection
+    let socket: ReturnType<typeof io> | null = null;
+    if (user?.id) {
+      // Match with backend port
+      socket = io("http://localhost:5000", {
+        path: '/socket.io',
+      });
+
+      const currentSocket = socket;
+      currentSocket.on("connect", () => {
+        console.log("Caregiver WebSocket connected!");
+        currentSocket.emit("join_room", { caregiver_id: user.id });
+      });
+
+      currentSocket.on("system_alert", (data: any) => {
+        console.log("Received system alert:", data);
+        setAlerts((prev) => [data, ...prev].slice(0, 5)); // Keep last 5 alerts
+      });
+
+      currentSocket.on("emergency", (data: any) => {
+        console.log("Received emergency:", data);
+        setAlerts((prev) => [
+          { type: "emergency", message: `EMERGENCY from Elder ${data.elder_id}!`, ...data },
+          ...prev
+        ].slice(0, 5));
+      });
+    }
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
+  }, [user]);
 
   if (loading) {
     return (
@@ -79,6 +115,23 @@ export default function CaretakerDashboard() {
           + Add Memory
         </button>
       </div>
+
+      {/* Alerts Section */}
+      {alerts.length > 0 && (
+        <div className="card" style={{ padding: '1rem', border: '1px solid #ef444450', background: '#ef444410' }}>
+          <h3 style={{ margin: '0 0 1rem 0', color: '#ef4444', fontSize: '1.2rem' }}>🚨 Real-time Alerts</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {alerts.map((alert, idx) => (
+              <div key={idx} style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px' }}>
+                <strong>{alert.type || 'Alert'}:</strong> {alert.message}
+                <div style={{ fontSize: '0.8rem', opacity: 0.8, marginTop: '2px' }}>
+                  {timeAgo(alert.timestamp || new Date().toISOString())}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem' }}>

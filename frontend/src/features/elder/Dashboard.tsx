@@ -1,24 +1,25 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuthStore } from '../auth/authStore';
 import apiClient from '../../api/axios';
+import { io } from 'socket.io-client';
 
-// ── Browser speech helpers ───────────────────────────────────────────────────
-function speak(text: string) {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
-    const ne = voices.find((v) => v.lang.startsWith('ne'));
-    utt.voice = ne ?? null;
-    utt.lang = ne ? 'ne-NP' : 'en-US';
-    utt.rate = 0.88;
-    utt.pitch = 1.05;
-    window.speechSynthesis.speak(utt);
+// ── Global Audio Player ──────────────────────────────────────────────────────
+let globalAudio = new Audio();
+
+function playBase64Audio(base64Str: string) {
+    if (!base64Str) return;
+    try {
+        globalAudio.pause();
+        globalAudio.src = `data:audio/mp3;base64,${base64Str}`;
+        globalAudio.play().catch(e => console.error("Audio play error:", e));
+    } catch (e) {
+        console.error("Audio decoding error:", e);
+    }
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type ReminderCard = { reminder_id: number; title: string; body?: string };
-type EventCard = { id: number; title: string; message: string; type: string };
+type ReminderCard = { id: number; title: string; body?: string };
+type EventCard = { id: number; title: string; message: string; type: string; photo_url?: string };
 
 // ── Card Styles ────────────────────────────────────────────────────────────
 const cardStyle: React.CSSProperties = {
@@ -37,7 +38,6 @@ const cardStyle: React.CSSProperties = {
     position: 'relative'
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
 export default function ElderDashboard() {
     const user = useAuthStore((s) => s.user);
     const elderId = user?.id ? Number(user.id) : null;
@@ -56,20 +56,25 @@ export default function ElderDashboard() {
     const lastSpokenRef = useRef('');
 
     // ── Load data ──────────────────────────────────────────────────────────────
-    useEffect(() => {
+    const refreshReminders = useCallback(() => {
         if (!elderId) return;
-
-        // 1. Reminders
         apiClient.get(`/reminders/${elderId}`, { params: { active: 'true' } })
             .then((r) => setReminders(r.data.reminders ?? []))
             .catch(() => { });
+    }, [elderId]);
+
+    useEffect(() => {
+        if (!elderId) return;
+
+        // 1. Initial Reminders
+        refreshReminders();
 
         // 2. Contacts
         apiClient.get(`/emergency/contacts/${elderId}`)
             .then((r) => setContacts(r.data.contacts ?? []))
             .catch(() => { });
 
-        // 3. Family Messages (Events + Reassurance)
+        // 3. Family Messages
         apiClient.get(`/memory/${elderId}`)
             .then((r) => {
                 const mems = r.data.memories ?? [];
@@ -78,8 +83,9 @@ export default function ElderDashboard() {
                     .map((m: any) => ({
                         id: m.id,
                         title: m.title,
-                        message: m.type === 'event' ? m.message : m.description,
-                        type: m.type
+                        message: m.type === 'event' ? m.detail?.message : m.detail?.message || m.description || "",
+                        type: m.type,
+                        photo_url: m.detail?.photo_url
                     }));
                 setEvents(familyMessages);
             })
@@ -87,22 +93,45 @@ export default function ElderDashboard() {
 
         // Greeting
         setTimeout(() => {
-            const greeting = 'नमस्ते! म सहारा हुँ। के मद्दत गरौं?';
-            setAnswer(greeting);
-            speak(greeting);
+            // Check local synthesis as fallback if ElevenLabs isn't ready on mount
+            setTimeout(() => {
+                const greeting = 'नमस्ते! म सहारा हुँ। के मद्दत गरौं?';
+                setAnswer(greeting);
+                // We do not call ElevenLabs on mount to save credits. We just show text.
+            }, 800);
         }, 800);
-    }, [elderId]);
+    }, [elderId, refreshReminders]);
 
-    // ── Listen to Socket.IO reminder_due ─────────────────────────────────────
+    // ── WebSocket Listener ───────────────────────────────────────────────────
     useEffect(() => {
-        const iv = setInterval(() => {
-            if (!elderId) return;
-            apiClient.get(`/reminders/${elderId}`, { params: { active: 'true' } })
-                .then((r) => setReminders(r.data.reminders ?? []))
-                .catch(() => { });
-        }, 60_000);
-        return () => clearInterval(iv);
-    }, [elderId]);
+        if (!elderId) return;
+
+        const socket = io('http://localhost:5000', {
+            transports: ['websocket'],
+            upgrade: false
+        });
+
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+            socket.emit('join_room', { elder_id: elderId });
+        });
+
+        socket.on('reminder_due', (data: any) => {
+            console.log('Reminder Due:', data);
+            refreshReminders();
+
+            if (data.voice_text) {
+                setAnswer(data.voice_text);
+            }
+            if (data.audio_content) {
+                playBase64Audio(data.audio_content);
+            }
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [elderId, refreshReminders]);
 
     // ── Voice Query ───────────────────────────────────────────────────────────
     const submitQuery = useCallback(async (text: string) => {
@@ -114,20 +143,21 @@ export default function ElderDashboard() {
 
             if (resp.data.intent === 'emergency') {
                 setAnswer('🚨 मद्दत बोलाइँदैछ!');
-                speak('मद्दत बोलाइँदैछ!');
                 await apiClient.post('/emergency', { elder_id: elderId, trigger: 'voice' }).catch(() => { });
+                if (resp.data.audio_content) playBase64Audio(resp.data.audio_content);
                 return;
             }
 
             if (ans !== lastSpokenRef.current) {
                 lastSpokenRef.current = ans;
                 setAnswer(ans);
-                speak(ans);
+                if (resp.data.audio_content) {
+                    playBase64Audio(resp.data.audio_content);
+                }
             }
         } catch {
             const fallback = 'माफ गर्नुहोस्। फेरि प्रयास गर्नुहोस्।';
             setAnswer(fallback);
-            speak(fallback);
         } finally {
             setThinking(false);
         }
@@ -169,7 +199,6 @@ export default function ElderDashboard() {
 
     // ── Actions ───────────────────────────────────────────────────────────────
     const handleEmergency = useCallback(async () => {
-        speak('मद्दत बोलाइँदैछ!');
         setAnswer('🚨 मद्दत बोलाइँदैछ!');
         if (elderId) {
             await apiClient.post('/emergency', { elder_id: elderId, trigger: 'button' }).catch(() => { });
@@ -237,8 +266,13 @@ export default function ElderDashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {events.map((e) => (
                             <div key={e.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
-                                <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>{e.title}</p>
-                                {e.message && <p style={{ margin: '0.4rem 0 0', color: 'rgba(255,255,255,0.8)', fontSize: '0.95rem', lineHeight: 1.4 }}>{e.message}</p>}
+                                <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.2rem', paddingBottom: e.photo_url ? '0.5rem' : '0' }}>{e.title}</p>
+                                {e.photo_url && (
+                                    <div style={{ width: '100%', height: '200px', borderRadius: '12px', overflow: 'hidden', marginBottom: '0.75rem' }}>
+                                        <img src={e.photo_url} alt={e.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                )}
+                                {e.message && <p style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontSize: '1.05rem', lineHeight: 1.5 }}>{e.message}</p>}
                             </div>
                         ))}
                     </div>
@@ -253,7 +287,7 @@ export default function ElderDashboard() {
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {reminders.map((r) => (
-                            <div key={r.reminder_id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
+                            <div key={r.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
                                 <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>{r.title}</p>
                                 {r.body && <p style={{ margin: '0.4rem 0 0.8rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>{r.body}</p>}
 
