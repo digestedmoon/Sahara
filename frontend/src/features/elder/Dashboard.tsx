@@ -1,725 +1,319 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import Webcam from "react-webcam";
-import apiClient from "../../api/axios";
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useAuthStore } from '../auth/authStore';
+import apiClient from '../../api/axios';
 
-/**
- * SaharaAI — Elder Dashboard (React)
- * - Low-vision + dyslexia-friendly: big targets, high contrast, simple language
- * - Voice-first: built-in Web Speech TTS (can be replaced by your backend TTS)
- * - API-ready: /api/where?item=..., /api/elder/feed, /api/rag/query, /api/elder/guidance
- */
-
+// ── Browser speech helpers ───────────────────────────────────────────────────
 function speak(text: string) {
-    try {
-        if (!window.speechSynthesis) return;
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.rate = 0.92;
-        u.pitch = 1.0;
-        u.volume = 1.0;
-
-        // Try Nepali voice if available
-        const voices = window.speechSynthesis.getVoices?.() || [];
-        const nepali = voices.find((v) => (v.lang || "").toLowerCase().startsWith("ne"));
-        if (nepali) u.voice = nepali;
-
-        window.speechSynthesis.speak(u);
-    } catch { }
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const ne = voices.find((v) => v.lang.startsWith('ne'));
+    utt.voice = ne ?? null;
+    utt.lang = ne ? 'ne-NP' : 'en-US';
+    utt.rate = 0.88;
+    utt.pitch = 1.05;
+    window.speechSynthesis.speak(utt);
 }
 
-function useClock() {
-    const [now, setNow] = useState(new Date());
-    useEffect(() => {
-        const t = setInterval(() => setNow(new Date()), 15000);
-        return () => clearInterval(t);
-    }, []);
-    return now;
-}
+// ── Types ──────────────────────────────────────────────────────────────────
+type ReminderCard = { reminder_id: number; title: string; body?: string };
+type EventCard = { id: number; title: string; message: string; type: string };
 
-function regionFromPhrase(phrase?: string) {
-    return phrase?.replace("-", " ") || "somewhere nearby";
-}
+// ── Card Styles ────────────────────────────────────────────────────────────
+const cardStyle: React.CSSProperties = {
+    width: '100%',
+    background: 'rgba(30, 35, 50, 0.65)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '24px',
+    padding: '1.5rem',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    overflow: 'hidden',
+    position: 'relative'
+};
 
-function classNames(...xs: (string | boolean | undefined | null)[]) {
-    return xs.filter(Boolean).join(" ");
-}
-
-interface BigCardButtonProps {
-    color: "primary" | "danger" | "neutral";
-    icon: string;
-    label: string;
-    hint: string;
-    footer: string;
-    onClick: () => void;
-}
-
-function BigCardButton({ color, icon, label, hint, footer, onClick }: BigCardButtonProps) {
-    const styleClass = useMemo(() => {
-        switch (color) {
-            case "danger":
-                return "border-rose-500/30 bg-rose-500/10 hover:border-rose-500/60 shadow-rose-500/5";
-            case "primary":
-                return "border-indigo-500/30 bg-indigo-500/10 hover:border-indigo-500/60 shadow-indigo-500/5";
-            default:
-                return "border-white/10 bg-white/5 hover:border-white/30 shadow-white/5";
-        }
-    }, [color]);
-
-    const iconColor = color === "danger" ? "text-rose-400" : color === "primary" ? "text-indigo-400" : "text-white/80";
-
-    return (
-        <button
-            onClick={onClick}
-            className={classNames(
-                "relative w-full min-h-[200px] rounded-[40px] p-8 text-left border backdrop-blur-2xl transition-all duration-300",
-                styleClass,
-                "hover:-translate-y-2 hover:shadow-[0_20px_50px_rgba(0,0,0,0.5)] active:scale-[0.96] focus:outline-none focus:ring-4 focus:ring-white/10 group"
-            )}
-            aria-label={label}
-        >
-            <div className="flex flex-col h-full justify-between gap-6 z-10 relative">
-                <div>
-                    <div className={classNames("text-5xl mb-6 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3", iconColor)} aria-hidden="true">
-                        {icon}
-                    </div>
-                    <div className="text-[2.5rem] font-black tracking-tight text-white mb-2 leading-tight">{label}</div>
-                    <div className="text-xl font-medium text-white/50 leading-tight group-hover:text-white/70 transition-colors">{hint}</div>
-                </div>
-                <div className="text-sm font-black uppercaseW tracking-[0.25em] text-white/30 group-hover:text-indigo-400/50 transition-colors">{footer}</div>
-            </div>
-
-            {/* Premium Radial Glow */}
-            <div className={classNames(
-                "absolute -right-12 -bottom-12 w-48 h-48 rounded-full blur-[80px] opacity-20 group-hover:opacity-40 transition-opacity duration-500 pointer-events-none",
-                color === "danger" ? "bg-rose-500" : color === "primary" ? "bg-indigo-500" : "bg-white"
-            )} />
-        </button>
-    );
-}
-
-interface ToastProps {
-    open: boolean;
-    icon: string;
-    message: string;
-    onClose: () => void;
-}
-
-function Toast({ open, icon, message, onClose }: ToastProps) {
-    if (!open) return null;
-    return (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-2xl">
-            <div className="flex items-center gap-4 rounded-2xl border border-white/20 bg-black/80 p-4 shadow-2xl backdrop-blur-lg">
-                <div className="text-2xl" aria-hidden="true">
-                    {icon}
-                </div>
-                <div className="flex-1 text-lg font-bold text-white">{message}</div>
-                <button
-                    onClick={onClose}
-                    className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 font-black text-white hover:bg-white/20 transition"
-                    aria-label="OK"
-                >
-                    OK
-                </button>
-            </div>
-        </div>
-    );
-}
-
-function dataURLtoBlob(dataurl: string) {
-    const arr = dataurl.split(",");
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) u8arr[n] = bstr.charCodeAt(n);
-    return new Blob([u8arr], { type: mime });
-}
-
+// ── Main component ────────────────────────────────────────────────────────────
 export default function ElderDashboard() {
-    const now = useClock();
+    const user = useAuthStore((s) => s.user);
+    const elderId = user?.id ? Number(user.id) : null;
 
-    const [toast, setToast] = useState({ open: false, icon: "💬", message: "" });
+    // AI State
+    const [answer, setAnswer] = useState('');
+    const [listening, setListening] = useState(false);
+    const [thinking, setThinking] = useState(false);
 
-    // ✅ Guidance dynamic (starts as loading)
-    const [coachText, setCoachText] = useState("मार्गदर्शन लोड हुँदैछ... (Loading guidance...)");
-    const lastSpokenGuidanceRef = useRef<string>("");
+    // Data State
+    const [reminders, setReminders] = useState<ReminderCard[]>([]);
+    const [events, setEvents] = useState<EventCard[]>([]);
+    const [contacts, setContacts] = useState<any[]>([]);
 
-    const [status, setStatus] = useState({ safeReady: true, lastCheck: "Just now" });
-
-    // Feed
-    const [cards, setCards] = useState<any[]>([]);
-    const [dashboardData, setDashboardData] = useState<any>(null);
-
-    // elderId used for /rag/query
-    const [elderId, setElderId] = useState<number | null>(null);
-
-    // Chat
-    const [isChatOpen, setIsChatOpen] = useState(false);
-    const [chatInput, setChatInput] = useState("");
-    const [isChatting, setIsChatting] = useState(false);
-    const [isListening, setIsListening] = useState(false);
-
-    // Modals
-    const [isHealthOpen, setIsHealthOpen] = useState(false);
-    const [isContactsOpen, setIsContactsOpen] = useState(false);
-
-    // Find my things
-    const [findItem, setFindItem] = useState("sunglasses");
-    const [findResult, setFindResult] = useState<any>(null);
-
-    // Camera
-    const [isDetecting, setIsDetecting] = useState(false);
-    const webcamRef = useRef<Webcam>(null);
-
-    const firstRunRef = useRef(true);
     const recognitionRef = useRef<any>(null);
+    const lastSpokenRef = useRef('');
 
-    function showToast(message: string, icon = "💬", speakIt = true) {
-        setToast({ open: true, icon, message });
-        if (speakIt) speak(message);
-    }
-    function closeToast() {
-        setToast((t) => ({ ...t, open: false }));
-    }
-
-    // ✅ Guidance fetch (requires backend route /api/elder/guidance)
-    const fetchGuidance = useCallback(
-        async (opts?: { speakIfNew?: boolean }) => {
-            // Avoid calling too early (often causes 401 before token is set)
-            if (!elderId) return;
-
-            try {
-                const resp = await apiClient.get("/elder/guidance");
-                const text = (resp.data?.guidance_nepali || "").trim();
-
-                if (text) {
-                    setCoachText(text);
-
-                    // Optional: speak only if it changed
-                    if (opts?.speakIfNew && text !== lastSpokenGuidanceRef.current) {
-                        lastSpokenGuidanceRef.current = text;
-                        speak(text);
-                    }
-                    return;
-                }
-
-                // If API returns empty guidance
-                setCoachText("हजुर, केही चाहियो भने ‘Talk to Me’ थिच्नुहोस्।");
-            } catch (error: any) {
-                console.error("Guidance error:", error?.response?.data || error);
-
-                // Show fallback so user sees something
-                setCoachText("हजुर, केही चाहियो भने ‘Talk to Me’ थिच्नुहोस्।");
-            }
-        },
-        [elderId]
-    );
-
-    const fetchFeed = useCallback(async () => {
-        try {
-            const resp = await apiClient.get("/elder/feed");
-            setCards(resp.data.active_cards || []);
-            if (resp.data?.elder_id) setElderId(Number(resp.data.elder_id));
-        } catch (error: any) {
-            console.error("Feed error:", error?.response?.data || error);
-        }
-    }, []);
-
-    const fetchDashboardData = useCallback(async () => {
-        try {
-            const resp = await apiClient.get("/elder/dashboard");
-            setDashboardData(resp.data);
-
-            // recommended: backend returns elder_id
-            if (resp.data?.elder_id) setElderId(Number(resp.data.elder_id));
-            else if (resp.data?.id) setElderId(Number(resp.data.id));
-        } catch (error: any) {
-            console.error("Dashboard error:", error?.response?.data || error);
-        }
-    }, []);
-
-    const captureAndDetect = useCallback(async () => {
-        if (!webcamRef.current) return;
-        const imageSrc = webcamRef.current.getScreenshot();
-        if (!imageSrc) return;
-
-        try {
-            const blob = dataURLtoBlob(imageSrc);
-            const formData = new FormData();
-            formData.append("image", blob, "frame.jpg");
-
-            const response = await apiClient.post("/detect", formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-            });
-
-            const announcements = response.data.announcements || [];
-            if (announcements.length > 0) {
-                announcements.forEach((text: string) => showToast(text, "🚨", true));
-            }
-        } catch (error: any) {
-            console.error("Detection error:", error?.response?.data || error);
-        }
-    }, []);
-
-    useEffect(() => {
-        let interval: ReturnType<typeof setInterval> | null = null;
-        if (isDetecting) {
-            interval = window.setInterval(() => captureAndDetect(), 6000);
-        }
-        return () => {
-            if (interval) window.clearInterval(interval);
-        };
-    }, [isDetecting, captureAndDetect]);
-
-    async function checkHealth() {
-        try {
-            await apiClient.get(`/health`);
-            setStatus((s) => ({ ...s, safeReady: true }));
-        } catch {
-            setStatus((s) => ({ ...s, safeReady: false }));
-        }
-    }
-
-    const startListening = useCallback(() => {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            showToast("Voice input is not supported on this browser.", "⚠️", true);
-            return;
-        }
-
-        try {
-            window.speechSynthesis?.cancel?.();
-        } catch { }
-
-        const recognition = new SpeechRecognition();
-        recognitionRef.current = recognition;
-
-        recognition.lang = "ne-NP";
-        recognition.interimResults = true;
-        recognition.continuous = false;
-
-        recognition.onstart = () => setIsListening(true);
-        recognition.onerror = (e: any) => {
-            console.error("STT error:", e);
-            setIsListening(false);
-            showToast("Mic error. Please try again.", "⚠️", true);
-        };
-        recognition.onend = () => setIsListening(false);
-
-        recognition.onresult = (event: any) => {
-            let transcript = "";
-            for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-            setChatInput(transcript.trim());
-        };
-
-        recognition.start();
-    }, []);
-
-    const stopListening = useCallback(() => {
-        try {
-            recognitionRef.current?.stop();
-        } catch { }
-    }, []);
-
-    async function submitRagQuery(e?: React.FormEvent) {
-        if (e) e.preventDefault();
-        if (!chatInput.trim()) return;
-
-        if (!elderId) {
-            showToast("Profile is still loading. Please try again.", "⚠️", true);
-            return;
-        }
-
-        setIsChatting(true);
-        try {
-            const r = await apiClient.post(`/rag/query`, { text: chatInput, elder_id: elderId });
-            const data = r.data;
-
-            showToast(data.answer_nepali || "ठीक छ।", "🤖", true);
-            setChatInput("");
-            setIsChatOpen(false);
-
-            if (data.auto_card?.created) fetchFeed();
-
-            // Guidance could change after conversation too
-            fetchGuidance();
-        } catch (error: any) {
-            console.error("RAG query error:", error?.response?.data || error);
-            showToast("Sorry, I could not understand right now.", "⚠️", true);
-        } finally {
-            setIsChatting(false);
-        }
-    }
-
-    async function cardAction(cardId: number, actionPath: string) {
-        // optimistic remove
-        setCards((prev) => prev.filter((c) => c.id !== cardId));
-
-        try {
-            await apiClient.post(`/elder/cards/${cardId}/${actionPath}`);
-            fetchFeed();
-            fetchGuidance({ speakIfNew: true });
-            showToast("Done.", "✅", true);
-        } catch (err: any) {
-            console.error("Card action error:", err?.response?.data || err);
-            fetchFeed(); // restore
-            showToast("Action failed. Try again.", "⚠️", true);
-        }
-    }
-
-    async function whereIsItem(item: string) {
-        try {
-            const r = await apiClient.get(`/where?item=${encodeURIComponent(item)}`);
-            const data = r.data;
-            setFindResult(data);
-
-            if (data?.found) {
-                const msg = data.announcement || `Your ${item} is in the ${regionFromPhrase(data.location_phrase)} area.`;
-                showToast(msg, "🧿", true);
-            } else {
-                showToast(`I haven’t seen ${item} yet. Please try again after a camera check.`, "🧿", true);
-            }
-        } catch {
-            showToast("I couldn’t reach the camera service. Please ask your caretaker for help.", "⚠️", true);
-        }
-    }
-
-    useEffect(() => {
-        try {
-            window.speechSynthesis?.getVoices?.();
-        } catch { }
-
-        fetchFeed();
-        fetchDashboardData();
-        checkHealth();
-
-        const t = setInterval(() => {
-            fetchFeed();
-            fetchDashboardData();
-            checkHealth();
-        }, 15000);
-
-        return () => clearInterval(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // ✅ fetch guidance only after elderId becomes available
+    // ── Load data ──────────────────────────────────────────────────────────────
     useEffect(() => {
         if (!elderId) return;
-        fetchGuidance();
 
-        // Guidance can update slower than feed; 60 seconds is enough
-        const g = setInterval(() => fetchGuidance(), 60000);
-        return () => clearInterval(g);
-    }, [elderId, fetchGuidance]);
+        // 1. Reminders
+        apiClient.get(`/reminders/${elderId}`, { params: { active: 'true' } })
+            .then((r) => setReminders(r.data.reminders ?? []))
+            .catch(() => { });
 
-    useEffect(() => {
-        if (!firstRunRef.current) return;
-        firstRunRef.current = false;
+        // 2. Contacts
+        apiClient.get(`/emergency/contacts/${elderId}`)
+            .then((r) => setContacts(r.data.contacts ?? []))
+            .catch(() => { });
+
+        // 3. Family Messages (Events + Reassurance)
+        apiClient.get(`/memory/${elderId}`)
+            .then((r) => {
+                const mems = r.data.memories ?? [];
+                const familyMessages = mems
+                    .filter((m: any) => m.type === 'event' || m.type === 'reassurance')
+                    .map((m: any) => ({
+                        id: m.id,
+                        title: m.title,
+                        message: m.type === 'event' ? m.message : m.description,
+                        type: m.type
+                    }));
+                setEvents(familyMessages);
+            })
+            .catch(() => { });
+
+        // Greeting
         setTimeout(() => {
-            showToast(
-                "नमस्ते आमा! म सहारा एआई हुँ। (Hello Aama, I am SaharaAI). Press the big blue button to talk to me.",
-                "💙",
-                true
-            );
-        }, 700);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+            const greeting = 'नमस्ते! म सहारा हुँ। के मद्दत गरौं?';
+            setAnswer(greeting);
+            speak(greeting);
+        }, 800);
+    }, [elderId]);
+
+    // ── Listen to Socket.IO reminder_due ─────────────────────────────────────
+    useEffect(() => {
+        const iv = setInterval(() => {
+            if (!elderId) return;
+            apiClient.get(`/reminders/${elderId}`, { params: { active: 'true' } })
+                .then((r) => setReminders(r.data.reminders ?? []))
+                .catch(() => { });
+        }, 60_000);
+        return () => clearInterval(iv);
+    }, [elderId]);
+
+    // ── Voice Query ───────────────────────────────────────────────────────────
+    const submitQuery = useCallback(async (text: string) => {
+        if (!text.trim() || !elderId) return;
+        setThinking(true);
+        try {
+            const resp = await apiClient.post('/query', { text, elder_id: elderId });
+            const ans = resp.data.answer_nepali ?? 'मलाई जानकारी छैन।';
+
+            if (resp.data.intent === 'emergency') {
+                setAnswer('🚨 मद्दत बोलाइँदैछ!');
+                speak('मद्दत बोलाइँदैछ!');
+                await apiClient.post('/emergency', { elder_id: elderId, trigger: 'voice' }).catch(() => { });
+                return;
+            }
+
+            if (ans !== lastSpokenRef.current) {
+                lastSpokenRef.current = ans;
+                setAnswer(ans);
+                speak(ans);
+            }
+        } catch {
+            const fallback = 'माफ गर्नुहोस्। फेरि प्रयास गर्नुहोस्।';
+            setAnswer(fallback);
+            speak(fallback);
+        } finally {
+            setThinking(false);
+        }
+    }, [elderId]);
+
+    // ── Voice recognition ─────────────────────────────────────────────────────
+    const startListening = useCallback(() => {
+        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SR) {
+            alert('Speech recognition not supported. Please use Chrome.');
+            return;
+        }
+        const rec = new SR();
+        rec.lang = 'ne-NP';
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        recognitionRef.current = rec;
+
+        rec.onresult = (e: any) => {
+            const transcript = e.results[0][0].transcript;
+            setListening(false);
+            submitQuery(transcript);
+        };
+        rec.onerror = () => setListening(false);
+        rec.onend = () => setListening(false);
+
+        rec.start();
+        setListening(true);
+    }, [submitQuery]);
+
+    const stopListening = useCallback(() => {
+        recognitionRef.current?.stop();
+        setListening(false);
     }, []);
 
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
+    const handleMicClick = useCallback(() => {
+        if (listening) { stopListening(); } else { startListening(); }
+    }, [listening, startListening, stopListening]);
 
+    // ── Actions ───────────────────────────────────────────────────────────────
+    const handleEmergency = useCallback(async () => {
+        speak('मद्दत बोलाइँदैछ!');
+        setAnswer('🚨 मद्दत बोलाइँदैछ!');
+        if (elderId) {
+            await apiClient.post('/emergency', { elder_id: elderId, trigger: 'button' }).catch(() => { });
+        }
+    }, [elderId]);
+
+    const dismissReminder = async (reminderId: number, action: 'taken' | 'later') => {
+        await apiClient.post(`/reminders/${reminderId}/action`, { action }).catch(() => { });
+        setReminders((prev) => prev.filter((r) => r.reminder_id !== reminderId));
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────────
     return (
-        <div className="flex flex-col gap-10 p-2 md:p-6 lg:p-8">
-            {/* COMPACT HUB HEADER */}
-            <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 p-8 rounded-[32px] border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl">
-                <div className="flex flex-col gap-1">
-                    <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-white flex items-center gap-3">
-                        SaharaAI <span className="text-indigo-400">Hub</span>
-                    </h1>
-                    <p className="text-white/60 font-medium text-lg md:text-xl">
-                        नमस्ते आमा! — Your safety & memory companion.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '2rem', animation: 'fadeIn 0.5s ease-out' }}>
+
+            {/* 1. Sahara AI Conversation Card */}
+            <div style={{ ...cardStyle, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(20,25,45,0.8)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem' }}>
+                    <div style={{ fontSize: '2rem' }}>✨</div>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 800 }}>सहारा (Sahara)</h2>
+                        <p style={{ margin: 0, color: '#a5b4fc', fontSize: '0.9rem' }}>तपाईंको डिजिटल साथी</p>
+                    </div>
+                </div>
+
+                <div style={{ flex: 1, minHeight: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 0' }}>
+                    <p style={{ margin: 0, fontSize: '1.25rem', color: '#fff', textAlign: 'center', lineHeight: 1.5, fontWeight: 500 }}>
+                        {answer || 'म सुन्दैछु...'}
                     </p>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-base font-bold text-white/90">
-                        <span
-                            className={classNames(
-                                "h-3 w-3 rounded-full shadow-[0_0_12px]",
-                                status.safeReady ? "bg-emerald-400 shadow-emerald-400/50" : "bg-rose-400 shadow-rose-400/50"
-                            )}
-                            aria-hidden="true"
-                        />
-                        {status.safeReady ? "Safe & Ready" : "System Offline"}
-                    </div>
-
-                    <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 px-8 py-4 text-lg md:text-xl font-bold text-white/90">
-                        <span className="text-2xl">🗓️</span>
-                        <span>{hh}:{mm}</span>
-                    </div>
-                </div>
-            </header>
-
-            {/* MAIN GRID */}
-            <main className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                <BigCardButton
-                    color="primary"
-                    icon="🗣️"
-                    label="Talk to Me"
-                    hint="मसंग कुरा गर्नुहोस्। (Ask me anything)."
-                    footer="AI Voice Assistant"
-                    onClick={() => setIsChatOpen(true)}
-                />
-
-                {/* DYNAMIC CARDS (MEDS/HELP) */}
-                {cards.map((c) => (
-                    <div
-                        key={c.id}
-                        className="relative w-full rounded-[32px] p-10 border border-amber-400/20 bg-amber-400/5 backdrop-blur-xl shadow-2xl flex flex-col justify-between group transition hover:border-amber-400/40"
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
+                    <button
+                        onClick={handleMicClick}
+                        disabled={thinking}
+                        style={{
+                            width: 100, height: 100, borderRadius: '50%',
+                            background: listening
+                                ? 'radial-gradient(circle, #ef4444 0%, #dc2626 100%)'
+                                : thinking
+                                    ? 'radial-gradient(circle, #6366f1 0%, #4f46e5 100%)'
+                                    : 'radial-gradient(circle, #4f46e5 0%, #6366f1 80%, #818cf8 100%)',
+                            border: 'none', cursor: thinking ? 'wait' : 'pointer',
+                            boxShadow: listening
+                                ? '0 0 0 10px rgba(239,68,68,0.15), 0 0 40px rgba(239,68,68,0.4)'
+                                : '0 0 0 8px rgba(99,102,241,0.15), 0 0 30px rgba(99,102,241,0.3)',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            animation: listening ? 'pulse 1.5s infinite' : 'none',
+                        }}
                     >
-                        <div>
-                            <div className="text-2xl mb-6 flex items-center gap-4" aria-hidden="true">
-                                {c.type === "HELP" ? <span className="text-rose-400 anim-pulse">🚨</span> : <span className="text-emerald-400">💊</span>}
-                                <span className="text-sm font-black uppercase tracking-[0.2em] text-white/30">{c.type}</span>
-                            </div>
-                            <div className="text-xl font-black tracking-tight text-white mb-2">{c.title_nepali}</div>
-                            <p className="text-base font-medium text-white/70 leading-relaxed whitespace-pre-wrap">{c.body_nepali}</p>
-                        </div>
-
-                        <div className="mt-10 flex items-stretch gap-4">
-                            <button
-                                onClick={() => cardAction(c.id, c.type === "HELP" ? "ack" : "taken")}
-                                className="flex-[2] rounded-2xl bg-white text-black font-black py-2 px-2 text-base hover:bg-white/90 active:scale-[0.98] transition shadow-xl"
-                            >
-                                {c.type === "HELP" ? "ठीक छ (OK)" : "खाएँ (Taken)"}
-                            </button>
-                            <button
-                                onClick={() => cardAction(c.id, "help")}
-                                className="flex-1 rounded-2xl bg-white/10 text-white font-black py-2 text-base hover:bg-white/20 active:scale-[0.98] transition border border-white/20 flex items-center justify-center gap-3 px-2"
-                            >
-                                <span >❓</span>
-                                <span>Help</span>
-                            </button>
-                        </div>
-                    </div>
-                ))}
-
-                <BigCardButton
-                    color="neutral"
-                    icon="🫀"
-                    label="My Health"
-                    hint="स्वास्थ्य र दबाई चेक गर्नुहोस्। (Check vitals & meds)."
-                    footer="Vitals & Pharmacy"
-                    onClick={() => setIsHealthOpen(true)}
-                />
-
-                <BigCardButton
-                    color="neutral"
-                    icon="👥"
-                    label="Contacts"
-                    hint="परिवारलाई फोन गर्नुहोस्। (Call family)."
-                    footer="Emergency Contacts"
-                    onClick={() => setIsContactsOpen(true)}
-                />
-
-                <BigCardButton
-                    color="neutral"
-                    icon="📍"
-                    label="Find Things"
-                    hint="“मेरो चस्मा कहाँ छ?” (Where is my...)"
-                    footer="AI Visual Memory"
-                    onClick={() => whereIsItem(findItem)}
-                />
-
-                <BigCardButton
-                    color="danger"
-                    icon="🆘"
-                    label="Emergency"
-                    hint="मलाई मद्दत चाहियो! (I need help now!)"
-                    footer="Alert All Caretakers"
-                    onClick={() => setIsContactsOpen(true)}
-                />
-            </main>
-
-            {/* GENTLE GUIDANCE SECTION */}
-            <section className="p-10 rounded-[32px] border border-white/10 bg-white/5 backdrop-blur-2xl shadow-2xl">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-10">
-                    <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-6">
-                            <span className="h-3 w-3 rounded-full bg-indigo-400 animate-pulse" />
-                            <h2 className="text-base font-black uppercase tracking-[0.3em] text-indigo-400">Proactive Guidance</h2>
-                        </div>
-                        <p className="text-3xl md:text-4xl lg:text-2xl font-bold leading-[1.3] text-white">
-                            {coachText}
-                        </p>
-                    </div>
-
-                    <div className="flex gap-4 w-full lg:w-auto">
-                        <button
-                            onClick={() => {
-                                speak(coachText);
-                                showToast("पढेर सुनाउँदै...", "🔊", false);
-                            }}
-                            className="flex-1 lg:flex-none rounded-2xl bg-white/10 px-8 py-5 font-black text-xl hover:bg-white/20 transition border border-white/10"
-                        >
-                            🔊 Speak
-                        </button>
-                        <button
-                            onClick={() => fetchGuidance({ speakIfNew: true })}
-                            className="flex-1 lg:flex-none rounded-2xl bg-white text-black px-8 py-5 font-black text-xl hover:bg-white/90 transition shadow-xl"
-                        >
-                            🔄 Refresh
-                        </button>
-                    </div>
+                        <span style={{ fontSize: '2.5rem' }}>
+                            {thinking ? '🤔' : listening ? '🔴' : '🎤'}
+                        </span>
+                    </button>
                 </div>
-            </section>
+            </div>
 
-            {/* HEALTH MODAL */}
-            {isHealthOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b0f1a]/90 backdrop-blur-xl p-4">
-                    <div className="w-full max-w-3xl rounded-[32px] border border-white/10 bg-white/5 p-8 lg:p-12 shadow-2xl relative">
-                        <button onClick={() => setIsHealthOpen(false)} className="absolute top-8 right-8 text-white/40 hover:text-white transition text-3xl">✖</button>
-                        <h2 className="text-4xl font-black text-white mb-8 flex items-center gap-4">
-                            <span className="text-emerald-400"> मेरो स्वास्थ्य</span> (My Health)
-                        </h2>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                            {dashboardData?.vitals?.map((v: any) => (
-                                <div key={v.label} className="p-6 rounded-3xl border border-white/10 bg-white/5 flex flex-col gap-2">
-                                    <div className="text-lg font-bold text-white/50 uppercase tracking-widest">{v.icon} {v.label}</div>
-                                    <div className="text-4xl font-black text-white">{v.value} <span className="text-xl opacity-40 font-medium">{v.unit}</span></div>
-                                    <div className="text-base font-bold text-emerald-400 flex items-center gap-2">
-                                        <span className="h-2 w-2 rounded-full bg-emerald-400" /> {v.status}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="p-8 rounded-3xl border border-white/10 bg-white/5">
-                            <h3 className="text-xl font-black text-white mb-6 uppercase tracking-widest text-white/40">Medicine Today</h3>
-                            <div className="space-y-4">
-                                {dashboardData?.medications?.map((m: any) => (
-                                    <div key={m.name} className="flex justify-between items-center bg-white/5 p-5 rounded-2xl border border-white/5 transition hover:bg-white/10">
-                                        <div>
-                                            <div className="text-xl font-bold text-white">{m.name}</div>
-                                            <div className="text-base text-white/40 font-medium">{m.time}</div>
-                                        </div>
-                                        {m.taken ? (
-                                            <span className="bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-xl text-sm font-black tracking-widest">TAKEN ✓</span>
-                                        ) : (
-                                            <span className="bg-amber-500/10 text-amber-400 px-4 py-2 rounded-xl text-sm font-black tracking-widest">PENDING</span>
-                                        )}
-                                    </div>
-                                ))}
+            {/* 2. Family Messages Card */}
+            {events.length > 0 && (
+                <div style={{ ...cardStyle, border: '1px solid rgba(236,72,153,0.3)', background: 'rgba(35,20,35,0.7)' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fbcfe8', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span>💌</span> परिवारको सन्देश (Family Messages)
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {events.map((e) => (
+                            <div key={e.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
+                                <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>{e.title}</p>
+                                {e.message && <p style={{ margin: '0.4rem 0 0', color: 'rgba(255,255,255,0.8)', fontSize: '0.95rem', lineHeight: 1.4 }}>{e.message}</p>}
                             </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
             )}
 
-            {/* CONTACTS MODAL */}
-            {isContactsOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b0f1a]/90 backdrop-blur-xl p-4">
-                    <div className="w-full max-w-xl rounded-[32px] border border-white/10 bg-white/5 p-8 lg:p-12 shadow-2xl relative">
-                        <button onClick={() => setIsContactsOpen(false)} className="absolute top-8 right-8 text-white/40 hover:text-white transition text-3xl">✖</button>
-                        <h2 className="text-4xl font-black text-white mb-8 flex items-center gap-4">
-                            <span className="text-rose-400">सम्पर्क</span> (Family)
-                        </h2>
+            {/* 3. Reminders Card */}
+            {reminders.length > 0 && (
+                <div style={{ ...cardStyle, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(40,30,15,0.7)' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fde68a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span>⏰</span> सम्झौना (Reminders)
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {reminders.map((r) => (
+                            <div key={r.reminder_id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
+                                <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>{r.title}</p>
+                                {r.body && <p style={{ margin: '0.4rem 0 0.8rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>{r.body}</p>}
 
-                        <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/20 mb-8">
-                            <div className="text-lg font-bold text-rose-400 mb-1 flex items-center gap-2">
-                                <span>🚨</span> Emergency Alert
-                            </div>
-                            <div className="text-white/60 font-medium">Click a name to alert them immediately.</div>
-                        </div>
-
-                        <div className="space-y-4">
-                            {dashboardData?.contacts?.length > 0 ? (
-                                dashboardData.contacts.map((c: any) => (
-                                    <button
-                                        key={c.id}
-                                        onClick={() => {
-                                            speak(`${c.name} लाई फोन गर्दै।`);
-                                            showToast(`${c.name} notified! They are coming.`, "📞", false);
-                                        }}
-                                        className="w-full p-6 rounded-3xl border border-white/10 bg-white/5 text-left hover:border-indigo-500/50 hover:bg-white/10 transition flex items-center justify-between group"
-                                    >
-                                        <div>
-                                            <div className="text-2xl font-black text-white group-hover:text-indigo-400 transition">{c.name}</div>
-                                            <div className="text-lg text-white/40 font-medium">{c.relationship}</div>
-                                        </div>
-                                        <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-2xl group-hover:bg-indigo-500 group-hover:text-white transition">📞</div>
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    <button onClick={() => dismissReminder(r.reminder_id, 'taken')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', background: '#22c55e', color: '#fff', fontSize: '1rem', fontWeight: 700, cursor: 'pointer' }}>
+                                        ✓ लिएँ (Done)
                                     </button>
-                                ))
-                            ) : (
-                                <div className="text-center p-12 text-white/20 font-bold italic">No family contacts saved yet.</div>
-                            )}
-                        </div>
+                                    <button onClick={() => dismissReminder(r.reminder_id, 'later')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>
+                                        पछि (Later)
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
 
-            {/* AI RAG CHAT OVERLAY */}
-            {isChatOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b0f1a]/95 backdrop-blur-xl p-4">
-                    <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl relative">
-                        <button
-                            onClick={() => setIsChatOpen(false)}
-                            className="absolute top-6 right-6 text-white/40 hover:text-white transition text-2xl"
-                        >
-                            ✖
-                        </button>
+            {/* 4. Emergency Card */}
+            <div style={{ ...cardStyle, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(45,15,15,0.7)', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+                <button
+                    onClick={handleEmergency}
+                    style={{ width: '100%', padding: '1.25rem', borderRadius: '16px', background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', border: 'none', color: '#fff', fontSize: '1.4rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 24px rgba(239, 68, 68, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}
+                >
+                    <span>🚨</span> मद्दत चाहियो (Help / SOS)
+                </button>
+            </div>
 
-                        <h2 className="text-3xl font-black text-white mb-2">Speak to SaharaAI</h2>
-                        <p className="text-lg text-white/60 mb-8 font-medium">तपाईंलाई के सहयोग चाहिएको छ? (How can I help you?)</p>
-
-                        <form onSubmit={submitRagQuery} className="flex flex-col gap-6">
-                            <div className="relative group">
-                                <textarea
-                                    value={chatInput}
-                                    onChange={(e) => setChatInput(e.target.value)}
-                                    placeholder="यहाँ लेख्नुहोस्... (Type here...)"
-                                    className="w-full rounded-2xl bg-white/5 border border-white/10 p-6 pr-20 text-2xl text-white focus:outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500/50 resize-none min-h-[160px] font-medium transition"
-                                    autoFocus
-                                />
-
-                                <button
-                                    type="button"
-                                    onClick={() => (isListening ? stopListening() : startListening())}
-                                    className={classNames(
-                                        "absolute right-4 top-4 h-14 w-14 rounded-2xl transition flex items-center justify-center text-3xl shadow-2xl",
-                                        isListening ? "bg-rose-500 text-white animate-pulse" : "bg-indigo-500 text-white hover:bg-indigo-600"
-                                    )}
-                                    aria-label={isListening ? "Stop listening" : "Speak"}
-                                >
-                                    {isListening ? "⏹️" : "🎙️"}
-                                </button>
+            {/* 5. Contacts Card */}
+            {contacts.length > 0 && (
+                <div style={{ ...cardStyle, border: '1px solid rgba(34,197,94,0.3)', background: 'rgba(15,35,20,0.7)' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span>📞</span> मेरा सम्पर्क (Contacts)
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {contacts.map((c, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255,255,255,0.05)', padding: '0.8rem 1rem', borderRadius: '16px' }}>
+                                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(34,197,94,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem' }}>
+                                    👤
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.05rem' }}>{c.name}</p>
+                                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>{c.relationship} • {c.phone}</p>
+                                </div>
+                                <a href={`tel:${c.phone}`} style={{ padding: '0.6rem 1.2rem', borderRadius: '10px', background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none', boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                                    Call
+                                </a>
                             </div>
-
-                            <div className="flex gap-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsChatOpen(false)}
-                                    className="flex-1 rounded-2xl bg-white/5 px-6 py-5 text-xl font-black text-white hover:bg-white/10 transition border border-white/10"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isChatting}
-                                    className="flex-[2] rounded-2xl bg-indigo-500 px-6 py-5 text-xl font-black text-white hover:bg-indigo-600 transition shadow-2xl shadow-indigo-500/20 disabled:opacity-50"
-                                >
-                                    {isChatting ? "Thinking..." : "Send Request ➜"}
-                                </button>
-                            </div>
-                        </form>
+                        ))}
                     </div>
                 </div>
             )}
 
-            <Toast open={toast.open} icon={toast.icon} message={toast.message} onClose={closeToast} />
+            {/* Animations */}
+            <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse {
+          0%, 100% { box-shadow: 0 0 0 8px rgba(239,68,68,0.15), 0 0 40px rgba(239,68,68,0.3); }
+          50%      { box-shadow: 0 0 0 16px rgba(239,68,68,0.08), 0 0 60px rgba(239,68,68,0.5); }
+        }
+      `}</style>
         </div>
     );
 }
