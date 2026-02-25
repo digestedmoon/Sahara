@@ -61,40 +61,61 @@ export default function LoginPage(): ReactElement {
   };
 
   return (
-    <>
-      <div className="bg-mesh" />
-      <div className="login-page">
+    <div style={{ position: 'relative', minHeight: '100dvh', background: 'var(--bg-base)', overflowX: 'hidden' }}>
+      <div className="bg-mesh" style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0,
+        background: 'radial-gradient(circle at 100% 0%, #FFCE99 0%, transparent 40%), radial-gradient(circle at 0% 100%, #FFB37C 0%, transparent 40%), var(--bg-base)'
+      }} />
 
+      <div className="login-page" style={{ position: 'relative', zIndex: 1 }}>
         {/* ── Left: Form ── */}
         <div className="login-left">
           <div className="login-card fade-up">
 
-            {/* Brand */}
-            <div className="login-brand fade-up">
-              <div className="brand-header">
-                <div className="mark">🫀</div>
-                <div className="brand-text">SaharaAI</div>
+            {/* Premium Logo Pill (Consistent across app) */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2.5rem' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.6rem 1.2rem',
+                background: '#fff',
+                borderRadius: '100px',
+                boxShadow: '0 4px 15px rgba(86, 47, 0, 0.05)',
+                border: '1px solid rgba(86, 47, 0, 0.05)'
+              }}>
+                <span style={{ fontSize: '1.2rem' }}></span>
+                <h2 style={{ 
+                  margin: 0, 
+                  fontSize: '1.1rem', 
+                  fontWeight: 900, 
+                  color: '#562F00',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase'
+                }}>
+                  Sahara <span style={{ color: '#FF9644' }}>सहारा</span>
+                </h2>
               </div>
-              <span className="slogan">For the ones who once guided us - now guided by SaharaAI</span>
             </div>
 
-            <h1 style={{ fontSize: '1.6rem', marginBottom: '0.4rem' }}>Welcome back</h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-              Sign in to access your personalised care dashboard.
+            <h1 style={{ fontSize: '1.8rem', marginBottom: '0.5rem', fontWeight: 800, color: 'var(--text-primary)', textAlign: 'center' }}>Welcome Back</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '2rem', textAlign: 'center' }}>
+              Log in to your personalized care companion.
             </p>
 
-            <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
               {/* Email */}
               <div className="form-group">
-                <label className="form-label" htmlFor="email">Email address</label>
+                <label className="form-label" htmlFor="email">Email</label>
                 <input
                   id="email"
                   type="email"
                   autoComplete="email"
-                  placeholder="you@example.com"
+                  placeholder="name@email.com"
                   className={`form-input${errors.email ? ' error' : ''}`}
                   {...register('email')}
+                  style={{ borderRadius: 'var(--radius-md)', padding: '0.85rem 1rem' }}
                 />
                 {errors.email && <span className="form-error">⚠ {errors.email.message}</span>}
               </div>
@@ -109,6 +130,7 @@ export default function LoginPage(): ReactElement {
                   placeholder="••••••••"
                   className={`form-input${errors.password ? ' error' : ''}`}
                   {...register('password')}
+                  style={{ borderRadius: 'var(--radius-md)', padding: '0.85rem 1rem' }}
                 />
                 {errors.password && <span className="form-error">⚠ {errors.password.message}</span>}
               </div>
@@ -116,15 +138,15 @@ export default function LoginPage(): ReactElement {
               {/* Global error */}
               {errors.root && (
                 <div style={{
-                  padding: '0.65rem 0.9rem',
-                  background: 'rgba(239,68,68,0.10)',
-                  border: '1px solid rgba(239,68,68,0.25)',
-                  borderRadius: 'var(--radius-sm)',
+                  padding: '0.75rem 1rem',
+                  background: 'rgba(239,68,68,0.08)',
+                  border: '1px solid rgba(239,68,68,0.15)',
+                  borderRadius: 'var(--radius-md)',
                   color: 'var(--danger)',
-                  fontSize: '0.82rem',
+                  fontSize: '0.85rem',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem',
+                  gap: '0.5rem',
                 }}>
                   🚫 {errors.root.message}
                 </div>
@@ -136,74 +158,77 @@ export default function LoginPage(): ReactElement {
                 type="submit"
                 disabled={isSubmitting}
                 className="btn btn-primary btn-full"
-                style={{ marginTop: '0.5rem', padding: '0.85rem' }}
+                style={{ 
+                  marginTop: '0.5rem', 
+                  padding: '1rem', 
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '1rem',
+                  boxShadow: '0 8px 25px var(--primary-glow)'
+                }}
               >
-                {isSubmitting
-                  ? <><span className="pulse">●</span> Signing in…</>
-                  : '→ Sign In'}
+                {isSubmitting ? 'Signing in...' : 'Sign In'}
               </button>
 
             </form>
 
             {/* Demo credentials */}
             <div style={{
-              marginTop: '1.5rem',
-              padding: '1rem 1.1rem',
-              background: 'rgba(99,102,241,0.07)',
-              border: '1px solid rgba(99,102,241,0.20)',
-              borderRadius: 'var(--radius-sm)',
+              marginTop: '2rem',
+              padding: '1.25rem',
+              background: 'rgba(255, 255, 255, 0.4)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              backdropFilter: 'blur(10px)'
             }}>
-              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.65rem' }}>
-                🔑 Demo Accounts
+              <p style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.8rem', textAlign: 'center' }}>
+                Quick Demo Access
               </p>
-              {MOCK_USERS.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setValue('email', u.email, { shouldValidate: true });
-                    setValue('password', u.password, { shouldValidate: true });
-                  }}
-                  style={{
-                    display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '0.5rem 0.65rem', marginBottom: '0.4rem',
-                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontFamily: 'inherit',
-                    transition: 'background var(--dur) var(--ease)',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(99,102,241,0.12)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-                >
-                  <div style={{ textAlign: 'left' }}>
-                    <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {u.name} <span className="badge badge-indigo" style={{ fontSize: '0.6rem', verticalAlign: 'middle' }}>{u.role}</span>
-                    </p>
-                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>{u.email} · {u.password}</p>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600, flexShrink: 0, marginLeft: '0.5rem' }}>
-                    ↙ Fill
-                  </span>
-                </button>
-              ))}
-              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
-                Click a row to auto-fill credentials, then press Sign In.
-              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {MOCK_USERS.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => {
+                      setValue('email', u.email, { shouldValidate: true });
+                      setValue('password', u.password, { shouldValidate: true });
+                    }}
+                    style={{
+                      display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.75rem 1rem',
+                      background: 'rgba(255,255,255,0.7)', border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)', cursor: 'pointer', fontFamily: 'inherit',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-2px)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+                  >
+                    <div style={{ textAlign: 'left' }}>
+                      <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {u.name}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.role}</p>
+                    </div>
+                    <span style={{ fontSize: '1.1rem' }}>➡️</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="divider" style={{ margin: '1.25rem 0 0' }}>Secure · HIPAA-aware · Encrypted</div>
+            <div className="divider" style={{ margin: '1.5rem 0 0', opacity: 0.5 }}>Secure · Encrypted · HIPAA-ready</div>
           </div>
         </div>
 
         {/* ── Right: Hero ── */}
-        <div className="login-right">
-          <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: '600px' }}>
+        <div className="login-right" style={{ background: 'transparent', borderLeft: 'none' }}>
+          <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: '500px' }}>
 
-            <div className="cursive-title fade-up">
-              The World’s First Culturally-Aware Voice Companion for Elder Care
-            </div>
+            <div style={{ fontSize: '3.5rem', marginBottom: '1.5rem' }}>🏡</div>
+            <h2 style={{ fontSize: '3rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.04em', marginBottom: '1.5rem' }}>
+              The First Culturally-Aware <span style={{ color: 'var(--primary)' }}>Companion</span>
+            </h2>
 
-            <p className="fade-up fade-up-1" style={{ color: 'var(--text-muted)', lineHeight: 1.8, marginBottom: '3rem', marginTop: '1rem', fontSize: '1.05rem', maxWidth: '450px' }}>
-              SaharaAI combines proactive conversation, real-time safety intelligence, and caregiver control — so no elder ever feels alone, lost, or unsafe again.
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.15rem', lineHeight: 1.7, marginBottom: '3rem' }}>
+              Sahara combines proactive conversations, safety intelligence, and caregiver control — so no elder ever feels alone again.
             </p>
 
             <div className="feature-container">
@@ -211,27 +236,28 @@ export default function LoginPage(): ReactElement {
                 <div
                   key={f.title}
                   className={`feature-card fade-up fade-up-${i + 2}`}
+                  style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 'var(--radius-lg)' }}
                 >
                   <div style={{
-                    width: 48, height: 48, borderRadius: 'var(--radius-md)',
+                    width: 44, height: 44, borderRadius: 'var(--radius-md)',
                     background: 'var(--primary)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '1.4rem', flexShrink: 0,
+                    fontSize: '1.3rem', flexShrink: 0,
                     boxShadow: '0 4px 12px var(--primary-glow)',
+                    color: '#fff'
                   }}>
                     {f.icon}
                   </div>
                   <div>
-                    <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1.05rem', marginBottom: '0.3rem', letterSpacing: '-0.01em' }}>{f.title}</h3>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.6 }}>{f.desc}</p>
+                    <h3 style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '1rem', marginBottom: '0.2rem' }}>{f.title}</h3>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>{f.desc}</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
-
       </div>
-    </>
+    </div>
   );
 }

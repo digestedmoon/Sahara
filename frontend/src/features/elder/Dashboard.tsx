@@ -7,6 +7,7 @@ import { io } from 'socket.io-client';
 let globalAudio = new Audio();
 
 function playBase64Audio(base64Str: string) {
+    console.log(base64Str);
     if (!base64Str) return;
     try {
         globalAudio.pause();
@@ -24,13 +25,13 @@ type EventCard = { id: number; title: string; message: string; type: string; pho
 // ── Card Styles ────────────────────────────────────────────────────────────
 const cardStyle: React.CSSProperties = {
     width: '100%',
-    background: 'rgba(30, 35, 50, 0.65)',
+    background: 'var(--bg-card)',
     backdropFilter: 'blur(16px)',
     WebkitBackdropFilter: 'blur(16px)',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    borderRadius: '24px',
-    padding: '1.5rem',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '1.25rem',
+    boxShadow: 'var(--shadow-card)',
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
@@ -44,6 +45,7 @@ export default function ElderDashboard() {
 
     // AI State
     const [answer, setAnswer] = useState('');
+    const [transcript, setTranscript] = useState('');
     const [listening, setListening] = useState(false);
     const [thinking, setThinking] = useState(false);
 
@@ -177,9 +179,10 @@ export default function ElderDashboard() {
         recognitionRef.current = rec;
 
         rec.onresult = (e: any) => {
-            const transcript = e.results[0][0].transcript;
+            const t = e.results[0][0].transcript;
+            setTranscript(t);
             setListening(false);
-            submitQuery(transcript);
+            submitQuery(t);
         };
         rec.onerror = () => setListening(false);
         rec.onend = () => setListening(false);
@@ -214,18 +217,20 @@ export default function ElderDashboard() {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '2rem', animation: 'fadeIn 0.5s ease-out' }}>
 
-            {/* 1. Sahara AI Conversation Card */}
-            <div style={{ ...cardStyle, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(20,25,45,0.8)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem' }}>
-                    <div style={{ fontSize: '2rem' }}>✨</div>
-                    <div>
-                        <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 800 }}>सहारा (Sahara)</h2>
-                        <p style={{ margin: 0, color: '#a5b4fc', fontSize: '0.9rem' }}>तपाईंको डिजिटल साथी</p>
-                    </div>
+            {/* 1. Sahara AI Assistant Section */}
+            <div style={{ ...cardStyle, border: '1px solid var(--primary-light)', background: 'rgba(255, 255, 255, 0.8)', padding: '2rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                    <span style={{ fontSize: '3rem', display: 'block', marginBottom: '0.5rem' }}>✨</span>
+                    <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '1rem', fontWeight: 600 }}>यस समयमा के मद्दत गरौं?</p>
                 </div>
 
-                <div style={{ flex: 1, minHeight: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 0' }}>
-                    <p style={{ margin: 0, fontSize: '1.25rem', color: '#fff', textAlign: 'center', lineHeight: 1.5, fontWeight: 500 }}>
+                <div style={{ flex: 1, minHeight: '120px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem 0', background: 'var(--primary-subtle)', borderRadius: 'var(--radius-md)', margin: '1rem 0' }}>
+                    {transcript && (
+                        <p style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 600, opacity: 0.8 }}>
+                             " {transcript} "
+                        </p>
+                    )}
+                    <p style={{ margin: 0, fontSize: '1.4rem', color: 'var(--text-primary)', textAlign: 'center', lineHeight: 1.4, fontWeight: 700, padding: '0 1rem' }}>
                         {answer || 'म सुन्दैछु...'}
                     </p>
                 </div>
@@ -235,23 +240,23 @@ export default function ElderDashboard() {
                         onClick={handleMicClick}
                         disabled={thinking}
                         style={{
-                            width: 100, height: 100, borderRadius: '50%',
+                            width: 110, height: 110, borderRadius: '50%',
                             background: listening
                                 ? 'radial-gradient(circle, #ef4444 0%, #dc2626 100%)'
                                 : thinking
-                                    ? 'radial-gradient(circle, #6366f1 0%, #4f46e5 100%)'
-                                    : 'radial-gradient(circle, #4f46e5 0%, #6366f1 80%, #818cf8 100%)',
-                            border: 'none', cursor: thinking ? 'wait' : 'pointer',
+                                    ? 'radial-gradient(circle, var(--primary) 0%, var(--primary-light) 100%)'
+                                    : '#fff',
+                            border: listening ? 'none' : '4px solid var(--primary)', cursor: thinking ? 'wait' : 'pointer',
                             boxShadow: listening
-                                ? '0 0 0 10px rgba(239,68,68,0.15), 0 0 40px rgba(239,68,68,0.4)'
-                                : '0 0 0 8px rgba(99,102,241,0.15), 0 0 30px rgba(99,102,241,0.3)',
-                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                ? '0 0 0 12px rgba(239,68,68,0.15), 0 0 50px rgba(239,68,68,0.4)'
+                                : '0 10px 30px rgba(255, 150, 68, 0.2)',
+                            transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             animation: listening ? 'pulse 1.5s infinite' : 'none',
                         }}
                     >
-                        <span style={{ fontSize: '2.5rem' }}>
-                            {thinking ? '🤔' : listening ? '🔴' : '🎤'}
+                        <span style={{ fontSize: '3rem', filter: thinking || listening ? 'none' : 'grayscale(0.2)' }}>
+                            {thinking ? '🤔' : listening ? '🎙️' : '🎤'}
                         </span>
                     </button>
                 </div>
@@ -259,20 +264,20 @@ export default function ElderDashboard() {
 
             {/* 2. Family Messages Card */}
             {events.length > 0 && (
-                <div style={{ ...cardStyle, border: '1px solid rgba(236,72,153,0.3)', background: 'rgba(35,20,35,0.7)' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fbcfe8', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ ...cardStyle, border: '1px solid rgba(236,72,153,0.3)', background: 'rgba(255, 240, 245, 0.6)' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#831843', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span>💌</span> परिवारको सन्देश (Family Messages)
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {events.map((e) => (
-                            <div key={e.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
-                                <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.2rem', paddingBottom: e.photo_url ? '0.5rem' : '0' }}>{e.title}</p>
+                            <div key={e.id} style={{ background: 'rgba(255,255,255,0.5)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(236,72,153,0.1)' }}>
+                                <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)', fontSize: '1.2rem', paddingBottom: e.photo_url ? '0.5rem' : '0' }}>{e.title}</p>
                                 {e.photo_url && (
                                     <div style={{ width: '100%', height: '200px', borderRadius: '12px', overflow: 'hidden', marginBottom: '0.75rem' }}>
                                         <img src={e.photo_url} alt={e.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     </div>
                                 )}
-                                {e.message && <p style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontSize: '1.05rem', lineHeight: 1.5 }}>{e.message}</p>}
+                                {e.message && <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '1.05rem', lineHeight: 1.5 }}>{e.message}</p>}
                             </div>
                         ))}
                     </div>
@@ -281,21 +286,21 @@ export default function ElderDashboard() {
 
             {/* 3. Reminders Card */}
             {reminders.length > 0 && (
-                <div style={{ ...cardStyle, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(40,30,15,0.7)' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fde68a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ ...cardStyle, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(254, 252, 232, 0.6)' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span>⏰</span> सम्झौना (Reminders)
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {reminders.map((r) => (
-                            <div key={r.id} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '16px' }}>
-                                <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>{r.title}</p>
-                                {r.body && <p style={{ margin: '0.4rem 0 0.8rem', color: 'rgba(255,255,255,0.6)', fontSize: '0.9rem' }}>{r.body}</p>}
+                            <div key={r.id} style={{ background: 'rgba(255,255,255,0.5)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(245,158,11,0.1)' }}>
+                                <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)', fontSize: '1.1rem' }}>{r.title}</p>
+                                {r.body && <p style={{ margin: '0.4rem 0 0.8rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{r.body}</p>}
 
                                 <div style={{ display: 'flex', gap: '0.75rem' }}>
                                     <button onClick={() => dismissReminder(r.id, 'taken')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', background: '#22c55e', color: '#fff', fontSize: '1rem', fontWeight: 700, cursor: 'pointer' }}>
                                         ✓ लिएँ (Done)
                                     </button>
-                                    <button onClick={() => dismissReminder(r.id, 'later')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>
+                                    <button onClick={() => dismissReminder(r.id, 'later')} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>
                                         पछि (Later)
                                     </button>
                                 </div>
@@ -305,31 +310,45 @@ export default function ElderDashboard() {
                 </div>
             )}
 
-            {/* 4. Emergency Card */}
-            <div style={{ ...cardStyle, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(45,15,15,0.7)', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-                <button
-                    onClick={handleEmergency}
-                    style={{ width: '100%', padding: '1.25rem', borderRadius: '16px', background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)', border: 'none', color: '#fff', fontSize: '1.4rem', fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 24px rgba(239, 68, 68, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}
-                >
-                    <span>🚨</span> मद्दत चाहियो (Help / SOS)
-                </button>
-            </div>
+            {/* 4. Emergency Button (Simplified) */}
+            <button
+                onClick={handleEmergency}
+                style={{ 
+                    width: '100%', 
+                    padding: '1.5rem', 
+                    borderRadius: 'var(--radius-lg)', 
+                    background: 'transparent', 
+                    border: '2px solid var(--danger)', 
+                    color: 'var(--danger)', 
+                    fontSize: '1.4rem', 
+                    fontWeight: 900, 
+                    cursor: 'pointer', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '0.75rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.05)'
+                }}
+            >
+                <span>🚨</span> SOS मद्दत चाहियो
+            </button>
 
             {/* 5. Contacts Card */}
             {contacts.length > 0 && (
-                <div style={{ ...cardStyle, border: '1px solid rgba(34,197,94,0.3)', background: 'rgba(15,35,20,0.7)' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ ...cardStyle, border: '1px solid rgba(34,197,94,0.3)', background: 'rgba(240, 253, 244, 0.6)' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <span>📞</span> मेरा सम्पर्क (Contacts)
                     </h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {contacts.map((c, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255,255,255,0.05)', padding: '0.8rem 1rem', borderRadius: '16px' }}>
-                                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(34,197,94,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem' }}>
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'rgba(255,255,255,0.5)', padding: '0.8rem 1rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(34,197,94,0.1)' }}>
+                                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(34,197,94,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem' }}>
                                     👤
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                    <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '1.05rem' }}>{c.name}</p>
-                                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>{c.relationship} • {c.phone}</p>
+                                    <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)', fontSize: '1.05rem' }}>{c.name}</p>
+                                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{c.relationship} • {c.phone}</p>
                                 </div>
                                 <a href={`tel:${c.phone}`} style={{ padding: '0.6rem 1.2rem', borderRadius: '10px', background: '#22c55e', color: '#fff', fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none', boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
                                     Call
