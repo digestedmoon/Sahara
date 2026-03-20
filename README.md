@@ -11,7 +11,7 @@ The Sahara ElderCare AI project aims to provide a comprehensive solution for eld
 - **Data Analytics**: Analysis of health data to provide insights into the well-being of elderly individuals.
 
 ## Installation
-To install the Smriti ElderCare AI project on your local machine, follow these steps:
+To install the Sahara ElderCare AI project on your local machine, follow these steps:
 1. Clone the repository:
    ```bash
    git clone https://github.com/digestedmoon/Sahara.git
@@ -34,7 +34,7 @@ python main.py
 For optimal functionality, it's recommended to have a compatible device and ensure that all configurations are set as per the user manual.
 
 ## Contributing
-Contributions are welcome! To contribute to the Smriti ElderCare AI project:
+Contributions are welcome! To contribute to the Sahara ElderCare AI project:
 1. Fork the repository.
 2. Create your feature branch (`git checkout -b feature/MyFeature`).
 3. Commit your changes (`git commit -m 'Add some feature'`).
