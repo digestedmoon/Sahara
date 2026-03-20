@@ -1,7 +1,7 @@
-# Smriti ElderCare AI
+# Sahara ElderCare AI
 
 ## Overview
-The Smriti ElderCare AI project aims to provide a comprehensive solution for elder care management through the use of artificial intelligence. This project helps caregivers manage their duties more efficiently and ensures that the elderly receive the attention and care they need effectively.
+The Sahara ElderCare AI project aims to provide a comprehensive solution for elder care management through the use of artificial intelligence. This project helps caregivers manage their duties more efficiently and ensures that the elderly receive the attention and care they need effectively.
 
 ## Features
 - **Health Monitoring**: Continuous health monitoring of elderly individuals with alerts for caregivers.
